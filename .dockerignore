@@ -1,0 +1,12 @@
+# Service account keys / secrets - niet in het image bakken
+*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Git / dev
+.git
+.gitignore

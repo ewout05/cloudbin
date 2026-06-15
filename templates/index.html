@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hastebin Clone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+
+    <!-- Beter highlight.js thema -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+
+    <style>
+        .line-numbers {
+            background-color: #2b303b;
+            color: #65737e; /* Subtiel contrast */
+            padding-right: 10px;
+            font-family: monospace;
+            text-align: right;
+            user-select: none;
+            word-wrap: break-word;
+            height: 100%;
+            overflow-y: auto;
+            border-right: 1px solid #4f5b66; /* Scheidingslijn */
+        }
+
+        pre code {
+            background-color: transparent !important; /* Geen extra achtergrond */
+            color: #c0c5ce; /* Heldere kleur voor tekst */
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        
+    </style>
+    
+
+    <!-- highlight.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+</head>
+<body class="bg-[#2b303b] text-white h-screen flex flex-col">
+    <div class="flex-grow flex flex-col relative">
+        <div class="fixed top-4 right-4 text-[#c0c5ce] text-lg bg-[#4f5b66] p-2">
+            <div class="flex justify-center items-center"><button onclick="window.location.href = '/r/about.md'">hastebin</button></div>
+            <div class="flex justify-end p-4">
+                <div class="flex space-x-4">
+                    {% if disabled["savepaste"] == True %}
+                    <button disabled class="text-[#c0c5ce] hover:text-white" onclick="saveAction()">
+                        <i class="fas fa-save" style="color: #969aa06b"></i>
+                    </button>
+                    {% else %}
+                    <button class="text-[#c0c5ce] hover:text-white" onclick="saveAction()">
+                        <i class="fas fa-save"></i>
+                    </button>
+                    {% endif %}
+                    {% if disabled["new_paste"] == True %}
+                        <button disabled class="text-[#c0c5ce] hover:text-white" onclick="newAction()">
+                            <i class="fas fa-file" style="color: #969aa06b"></i>
+                        </button>
+                    {% else %}
+                        <button class="text-[#c0c5ce] hover:text-white" onclick="newAction()">
+                            <i class="fas fa-file"></i>
+                        </button>
+                    {% endif %}
+                    {% if disabled["duplicate_edit"] == True %}
+                    <button disabled class="text-[#c0c5ce] hover:text-white" onclick="duplicateEditAction()">
+                        <i class="fas fa-edit" style="color: #969aa06b"></i>
+                    </button>
+                    {% else %}
+                    <button class="text-[#c0c5ce] hover:text-white" onclick="duplicateEditAction()">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    {% endif %}
+                    {% if disabled["raw_text"] == True %}
+                    <button disabled class="text-[#c0c5ce] hover:text-white" onclick="rawTextAction()">
+                        <i class="fas fa-file-alt" style="color: #969aa06b"></i>
+                    </button>
+                    {% else %}
+                    <button class="text-[#c0c5ce] hover:text-white" onclick="rawTextAction()">
+                        <i class="fas fa-file-alt"></i>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="flex-grow p-4 flex">
+            <div class="w-16 line-numbers">
+                <pre id="line-numbers">1</pre>
+            </div>
+            <div class="flex-grow">
+                {% if new_paste %}
+                <textarea id="code-area" class="w-full h-full bg-transparent text-[#c0c5ce] focus:outline-none resize-none" placeholder="Paste your code here..." style="padding-left: 15px;"></textarea>
+                <pre id="code-display" class="hidden w-full h-full bg-transparent text-[#c0c5ce]"><code></code></pre>
+                {% else %}
+                <pre id="code-display" class="w-full h-full bg-transparent text-[#c0c5ce]"><code class="language-{{ language }}" style="padding: 0em; padding-left: 15px;">{{ code }}</code></pre>
+                {% endif %}
+            </div>
+        </div>
+        
+    </div>
+
+    <script>
+        function initialize() {
+            const textarea = document.getElementById('code-area');
+            const lineNumbers = document.getElementById('line-numbers');
+            const codeDisplay = document.getElementById('code-display');
+
+            // Functie om lijnnummers bij te werken
+            function updateLineNumbers(content) {
+                const lines = content.split('\n').length;
+                let lineNumbersText = '';
+                for (let i = 1; i <= lines; i++) {
+                    lineNumbersText += i + '\n';
+                }
+                lineNumbers.textContent = lineNumbersText;
+            }
+
+            // Functie om de code in het gekleurde blok weer te geven
+            function updateHighlightedCode(content) {
+                const codeBlock = codeDisplay?.querySelector('code');
+                if (codeBlock) {
+                    codeBlock.textContent = content;
+                    hljs.highlightBlock(codeBlock);
+                }
+            }
+
+            function loadDuplicatedPaste() {
+                const savedContent = localStorage.getItem('pasteContent');
+
+                // Vul de textarea met de opgeslagen inhoud als die er is
+                const textarea = document.getElementById('code-area');
+                if (savedContent && textarea) {
+                    textarea.value = savedContent;
+                    textarea.focus();
+                    // Verwijder de inhoud uit localStorage na gebruik
+                    localStorage.removeItem('pasteContent');
+                }
+            }
+
+            // Bij nieuwe paste: werk lijnnummers en kleuren bij tijdens input
+            if (textarea) {
+                textarea.addEventListener('input', function () {
+                    const content = textarea.value || '';
+                    updateLineNumbers(content);
+                    updateHighlightedCode(content);
+                    
+                });
+
+                // Initialiseer bij nieuwe paste
+                const initialContent = textarea.value || '';
+                updateLineNumbers(initialContent);
+                loadDuplicatedPaste();
+            }
+
+            // Bij bestaande code (new_paste=False): initialiseer lijnnummers en kleuren
+            if (codeDisplay) {
+                const codeContent = codeDisplay.querySelector('code').textContent || '';
+                updateLineNumbers(codeContent);
+                updateHighlightedCode(codeContent);
+            }
+        }
+
+        // Wacht tot de pagina volledig geladen is
+        document.addEventListener('DOMContentLoaded', initialize);
+
+
+        // keybinds
+
+        document.addEventListener('keydown', function(event) {
+            // Controleer of Command of Control wordt ingedrukt
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const isCtrl = event.ctrlKey || (isMac && event.metaKey);
+
+            if (isCtrl) {
+                // Save - Control/Command + S
+                if (event.key === 's' || event.key === 'S') {
+                    event.preventDefault(); // Voorkomt de standaard opslaan actie
+                    saveAction(); // Roep de save functie aan
+                }
+
+                // New - Control/Command + N
+                if (event.key === 'n' || event.key === 'N') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation(); // Sterkere onderdrukking van de propagatie
+                    newAction(); // Roep de nieuwe actie aan
+                }
+
+                // Duplicate & Edit - Control/Command + D
+                if (event.key === 'd' || event.key === 'D') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    duplicateEditAction(); // Roep de duplicate actie aan
+                }
+
+                // Raw (Just Text) - Control/Command + Shift + R
+                if (event.key === 'r' || event.key === 'R') {
+                    if (event.shiftKey) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        rawTextAction(); // Roep de raw text actie aan
+                    }
+                }
+            }
+        });
+
+        // Acties voor de sneltoetsen
+        function saveAction() {
+            console.log('Opslaan actie');
+            // Voeg je opslaan logica toe hier
+
+            // neemt code en stuurt request naar /create en gaat naar /r/<id>
+            const code = document.getElementById('code-area').value;
+            fetch('/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ content: code })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                window.location.href = `/r/${data.id}`;
+            })
+            .catch(error => {
+                console.error('Fout bij het opslaan:', error);
+            });
+
+        }
+
+        function newAction() {
+            console.log('Nieuwe actie');
+            // Voeg je nieuwe paste logica toe hier
+            
+            // Gaat naar /
+            window.location.href = '/';
+        }
+
+        function duplicateEditAction() {
+            console.log('Dupliceren en bewerken actie');
+
+            // Verkrijg de inhoud van de huidige paste
+            const currentContent = document.getElementById('code-display')?.textContent || '';
+
+            // Sla de inhoud op in localStorage
+            localStorage.setItem('pasteContent', currentContent);
+
+            // Ga naar de / route
+            window.location.href = '/';
+        }
+
+
+        function rawTextAction() {
+            console.log('Raw text actie');
+            // Voeg je raw text logica toe hier
+            window.location.href = '/raw/{{ snippet_id }}';
+        }
+    </script>
+    
+    
+</body>
+</html>

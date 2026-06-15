@@ -1,0 +1,1 @@
+gcloud builds submit --tag europe-west1-docker.pkg.dev/ewout05-apis/cloud-hastebin/ewout05_artifact:latest
