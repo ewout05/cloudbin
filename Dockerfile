@@ -1,21 +1,21 @@
-# Gebruik een lichte Python base image
+# Use a lightweight Python base image
 FROM python:3.9-slim
 
-# Stel de werkmap in
+# Set the working directory
 WORKDIR /app
 
-# Kopieer de afhankelijkhedenlijst
+# Copy the dependency list
 COPY requirements.txt .
 
-# Update pip en installeer afhankelijkheden
+# Update pip and install dependencies
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# Kopieer de volledige app directory naar de container
+# Copy the full app directory into the container
 COPY . .
 
-# Stel de standaard poort in waarop Flask draait
+# Expose the default port Flask runs on
 EXPOSE 8080
 
-# Stel het startcommando in met Gunicorn
+# Set the start command using Gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]

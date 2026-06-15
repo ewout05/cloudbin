@@ -1,4 +1,4 @@
-# Service account keys / secrets - niet in het image bakken
+# Service account keys / secrets - keep out of the image
 *.json
 
 # Python

@@ -7,13 +7,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
 
-    <!-- Beter highlight.js thema -->
+    <!-- Better highlight.js theme -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
 
     <style>
         .line-numbers {
             background-color: #2b303b;
-            color: #65737e; /* Subtiel contrast */
+            color: #65737e; /* Subtle contrast */
             padding-right: 10px;
             font-family: monospace;
             text-align: right;
@@ -21,12 +21,12 @@
             word-wrap: break-word;
             height: 100%;
             overflow-y: auto;
-            border-right: 1px solid #4f5b66; /* Scheidingslijn */
+            border-right: 1px solid #4f5b66; /* Separator line */
         }
 
         pre code {
-            background-color: transparent !important; /* Geen extra achtergrond */
-            color: #c0c5ce; /* Heldere kleur voor tekst */
+            background-color: transparent !important; /* No extra background */
+            color: #c0c5ce; /* Bright text color */
         }
 
         pre {
@@ -108,7 +108,7 @@
             const lineNumbers = document.getElementById('line-numbers');
             const codeDisplay = document.getElementById('code-display');
 
-            // Functie om lijnnummers bij te werken
+            // Function to update the line numbers
             function updateLineNumbers(content) {
                 const lines = content.split('\n').length;
                 let lineNumbersText = '';
@@ -118,7 +118,7 @@
                 lineNumbers.textContent = lineNumbersText;
             }
 
-            // Functie om de code in het gekleurde blok weer te geven
+            // Function to render the code in the highlighted block
             function updateHighlightedCode(content) {
                 const codeBlock = codeDisplay?.querySelector('code');
                 if (codeBlock) {
@@ -130,32 +130,32 @@
             function loadDuplicatedPaste() {
                 const savedContent = localStorage.getItem('pasteContent');
 
-                // Vul de textarea met de opgeslagen inhoud als die er is
+                // Fill the textarea with the saved content if it exists
                 const textarea = document.getElementById('code-area');
                 if (savedContent && textarea) {
                     textarea.value = savedContent;
                     textarea.focus();
-                    // Verwijder de inhoud uit localStorage na gebruik
+                    // Remove the content from localStorage after use
                     localStorage.removeItem('pasteContent');
                 }
             }
 
-            // Bij nieuwe paste: werk lijnnummers en kleuren bij tijdens input
+            // For a new paste: update line numbers and highlighting while typing
             if (textarea) {
                 textarea.addEventListener('input', function () {
                     const content = textarea.value || '';
                     updateLineNumbers(content);
                     updateHighlightedCode(content);
-                    
+
                 });
 
-                // Initialiseer bij nieuwe paste
+                // Initialize for a new paste
                 const initialContent = textarea.value || '';
                 updateLineNumbers(initialContent);
                 loadDuplicatedPaste();
             }
 
-            // Bij bestaande code (new_paste=False): initialiseer lijnnummers en kleuren
+            // For existing code (new_paste=False): initialize line numbers and highlighting
             if (codeDisplay) {
                 const codeContent = codeDisplay.querySelector('code').textContent || '';
                 updateLineNumbers(codeContent);
@@ -163,36 +163,36 @@
             }
         }
 
-        // Wacht tot de pagina volledig geladen is
+        // Wait until the page is fully loaded
         document.addEventListener('DOMContentLoaded', initialize);
 
 
         // keybinds
 
         document.addEventListener('keydown', function(event) {
-            // Controleer of Command of Control wordt ingedrukt
+            // Check whether Command or Control is pressed
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const isCtrl = event.ctrlKey || (isMac && event.metaKey);
 
             if (isCtrl) {
                 // Save - Control/Command + S
                 if (event.key === 's' || event.key === 'S') {
-                    event.preventDefault(); // Voorkomt de standaard opslaan actie
-                    saveAction(); // Roep de save functie aan
+                    event.preventDefault(); // Prevents the default save action
+                    saveAction(); // Call the save function
                 }
 
                 // New - Control/Command + N
                 if (event.key === 'n' || event.key === 'N') {
                     event.preventDefault();
-                    event.stopImmediatePropagation(); // Sterkere onderdrukking van de propagatie
-                    newAction(); // Roep de nieuwe actie aan
+                    event.stopImmediatePropagation(); // Stronger suppression of propagation
+                    newAction(); // Call the new action
                 }
 
                 // Duplicate & Edit - Control/Command + D
                 if (event.key === 'd' || event.key === 'D') {
                     event.preventDefault();
                     event.stopImmediatePropagation();
-                    duplicateEditAction(); // Roep de duplicate actie aan
+                    duplicateEditAction(); // Call the duplicate action
                 }
 
                 // Raw (Just Text) - Control/Command + Shift + R
@@ -200,65 +200,65 @@
                     if (event.shiftKey) {
                         event.preventDefault();
                         event.stopImmediatePropagation();
-                        rawTextAction(); // Roep de raw text actie aan
+                        rawTextAction(); // Call the raw text action
                     }
                 }
             }
         });
 
-        // Acties voor de sneltoetsen
+        // Actions for the shortcuts
         async function saveAction() {
-            console.log('Opslaan actie');
+            console.log('Save action');
 
             const code = document.getElementById('code-area').value;
             try {
-                // 1. Vraag een signed URL aan bij de server (zonder inhoud mee te sturen).
+                // 1. Request a signed URL from the server (without sending any content).
                 const res = await fetch('/upload-url', { method: 'POST' });
-                if (!res.ok) throw new Error('Kon geen upload-URL krijgen: ' + res.status);
+                if (!res.ok) throw new Error('Could not get upload URL: ' + res.status);
                 const data = await res.json();
 
-                // 2. Upload de inhoud RECHTSTREEKS naar Google Cloud Storage.
-                //    De bytes gaan niet door Cloud Run heen -> enkel storage-kosten.
-                //    De Content-Type moet exact matchen met wat er gesigned is.
+                // 2. Upload the content DIRECTLY to Google Cloud Storage.
+                //    The bytes don't pass through Cloud Run -> storage cost only.
+                //    The Content-Type must exactly match what was signed.
                 const put = await fetch(data.upload_url, {
                     method: 'PUT',
                     headers: { 'Content-Type': data.content_type },
                     body: code
                 });
-                if (!put.ok) throw new Error('Upload naar storage mislukt: ' + put.status);
+                if (!put.ok) throw new Error('Upload to storage failed: ' + put.status);
 
-                // 3. Toon de nieuwe paste.
+                // 3. Show the new paste.
                 window.location.href = `/r/${data.id}`;
             } catch (error) {
-                console.error('Fout bij het opslaan:', error);
+                console.error('Error while saving:', error);
             }
         }
 
         function newAction() {
-            console.log('Nieuwe actie');
-            // Voeg je nieuwe paste logica toe hier
-            
-            // Gaat naar /
+            console.log('New action');
+            // Add your new paste logic here
+
+            // Go to /
             window.location.href = '/';
         }
 
         function duplicateEditAction() {
-            console.log('Dupliceren en bewerken actie');
+            console.log('Duplicate and edit action');
 
-            // Verkrijg de inhoud van de huidige paste
+            // Get the content of the current paste
             const currentContent = document.getElementById('code-display')?.textContent || '';
 
-            // Sla de inhoud op in localStorage
+            // Save the content to localStorage
             localStorage.setItem('pasteContent', currentContent);
 
-            // Ga naar de / route
+            // Go to the / route
             window.location.href = '/';
         }
 
 
         function rawTextAction() {
-            console.log('Raw text actie');
-            // Voeg je raw text logica toe hier
+            console.log('Raw text action');
+            // Add your raw text logic here
             window.location.href = '/raw/{{ snippet_id }}';
         }
     </script>
