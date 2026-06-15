@@ -12,20 +12,38 @@ scales from zero to as much traffic as you throw at it without managing any serv
 
 ## How it works
 
+Uploads use **GCS v4 signed URLs** so the paste content goes *directly* from the browser to
+Cloud Storage and never passes through Cloud Run. That matters for cost: if someone uploads
+100 GB, you only pay for storage — not for Cloud Run CPU/egress moving those bytes.
+
 ```
-                  ┌──────────────┐     upload_from_string()   ┌─────────────────────┐
-  POST /create ──▶│  Flask app   │ ─────────────────────────▶ │  GCS bucket         │
-  GET  /r/<id> ◀──│  (app.py)    │ ◀───────────────────────── │  haste_ewout05_com  │
-                  └──────────────┘     download_as_text()      └─────────────────────┘
-                   on Cloud Run
+   1. POST /upload-url   ┌──────────────┐
+  ───────────────────────▶│  Flask app   │   asks IAM API to sign a URL (no bytes)
+   { id, upload_url }   ◀─│  (app.py)    │
+                          └──────────────┘
+                           on Cloud Run
+   2. PUT <content>       ┌─────────────────────┐
+  ────────────────────────▶│  GCS bucket         │   bytes go straight to storage,
+     (direct to GCS)       │  haste_ewout05_com  │   bypassing Cloud Run entirely
+                           └─────────────────────┘
+   3. GET /r/<id>  ── Cloud Run reads the object and renders it in the web UI
 ```
 
-1. A snippet is created via `POST /create`. The server generates a random 8-character ID
-   (`uuid4()[:8]`) and writes the content to an object with that name in the GCS bucket.
-2. Reading a snippet (`GET /r/<id>`) downloads the object from the bucket and renders it in
-   the HTML template. Unknown IDs redirect back to the home page.
-3. There is no database — each paste is simply one object in the bucket, which is what makes
+1. The browser calls `POST /upload-url`. The server generates a random 8-character ID
+   (`uuid4()[:8]`) and returns a short-lived (15 min) signed URL that grants a single `PUT`.
+2. The browser `PUT`s the content **directly to GCS** using that URL. The bytes never touch
+   Cloud Run.
+3. Reading a snippet (`GET /r/<id>`) downloads the object and renders it in the HTML
+   template. Unknown IDs redirect back to the home page. *(Reads still go through Cloud Run;
+   only uploads are offloaded.)*
+4. There is no database — each paste is simply one object in the bucket, which is what makes
    it horizontally scalable.
+
+### Signing without a key file
+
+On Cloud Run there is no local private key (we rely on ADC). Signing the URL therefore uses
+the **IAM Service Account Credentials API** (`signBlob`) with the runtime service account
+itself. See the [one-time GCP setup](#one-time-gcp-setup-for-signed-urls) below.
 
 ### Authentication
 
@@ -42,24 +60,34 @@ gcloud auth application-default login
 
 ## Endpoints
 
-| Method | Path                      | Description                                                        |
-| ------ | ------------------------- | ------------------------------------------------------------------ |
-| `GET`  | `/`                       | Home page with the editor to create a new paste.                   |
-| `POST` | `/create`                 | Create a paste. JSON body `{"content": "..."}`. Returns the `id`.  |
-| `GET`  | `/r/<id>`                 | View a paste rendered in the web UI (optionally `/r/<id>.<lang>`). |
-| `GET`  | `/raw/<id>`               | View the raw paste content (optionally `/raw/<id>.<lang>`).        |
-| `GET`  | `/r/about`                | Render `about.md` (the project's about page).                      |
+| Method | Path          | Description                                                                       |
+| ------ | ------------- | --------------------------------------------------------------------------------- |
+| `GET`  | `/`           | Home page with the editor to create a new paste.                                  |
+| `POST` | `/upload-url` | Returns `{id, upload_url, content_type}` — a signed URL to `PUT` the content to.  |
+| `GET`  | `/r/<id>`     | View a paste rendered in the web UI (optionally `/r/<id>.<lang>`).                |
+| `GET`  | `/raw/<id>`   | View the raw paste content (optionally `/raw/<id>.<lang>`).                       |
+| `GET`  | `/r/about`    | Render `about.md` (the project's about page).                                     |
 
 ### Create a paste
 
+Creating a paste is a two-step flow (the bytes go straight to GCS):
+
 ```bash
-curl -X POST https://hastebin-433793328025.europe-west1.run.app/create \
-  -H "Content-Type: application/json" \
-  -d '{"content": "hello world"}'
-# {"id": "a1b2c3d4", "language": "(auto)", "message": "Snippet created successfully"}
+BASE=https://hastebin-433793328025.europe-west1.run.app
+
+# 1. Ask for a signed upload URL
+RESP=$(curl -s -X POST "$BASE/upload-url")
+ID=$(echo "$RESP" | jq -r .id)
+URL=$(echo "$RESP" | jq -r .upload_url)
+
+# 2. PUT the content directly to Cloud Storage
+curl -X PUT "$URL" -H "Content-Type: text/plain; charset=utf-8" -d "hello world"
+
+echo "$BASE/r/$ID"   # open this to view the paste
 ```
 
-Then open `https://.../r/a1b2c3d4` to view it.
+The `Content-Type` of the `PUT` must exactly match the `content_type` returned in step 1,
+otherwise GCS rejects the signature.
 
 ## Project structure
 
@@ -116,10 +144,35 @@ Connect the repo so every `git push` to `main` is automatically built and deploy
 
 From then on: **push to `main` → build → live**, no manual commands needed.
 
+## One-time GCP setup for signed URLs
+
+Because the app signs URLs with the runtime service account (no key file), three things must
+be configured once. Run these with an account that has owner/admin rights:
+
+```powershell
+# 1. Enable the IAM Service Account Credentials API (used to sign without a key)
+gcloud services enable iamcredentials.googleapis.com --project ewout05-apis
+
+# 2. Let the Cloud Run service account sign on its own behalf (signBlob)
+gcloud iam service-accounts add-iam-policy-binding `
+  433793328025-compute@developer.gserviceaccount.com `
+  --member="serviceAccount:433793328025-compute@developer.gserviceaccount.com" `
+  --role="roles/iam.serviceAccountTokenCreator" `
+  --project ewout05-apis
+
+# 3. Allow the browser to PUT directly to the bucket (CORS) — see cors.json
+gsutil cors set cors.json gs://haste_ewout05_com
+```
+
+If `/upload-url` returns a 500 with a `signBlob`/permission error, step 1 or 2 is missing.
+If the browser shows a CORS error on the `PUT`, step 3 is missing or the origin in
+[`cors.json`](cors.json) doesn't match your Cloud Run URL.
+
 ## Configuration
 
 The bucket name is currently hard-coded in `app.py` as `haste_ewout05_com`. Change it there
-if you deploy against a different bucket.
+if you deploy against a different bucket. If you change it, also update the bucket in the
+`gsutil cors set` command above.
 
 ## Tech stack
 
