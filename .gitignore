@@ -1,5 +1,5 @@
-### Secrets - NOOIT committen ###
-# GCP service account keys e.d.
+### Secrets - NEVER commit ###
+# GCP service account keys, etc.
 *.json
 ewout05-apis-*.json
 *.pem
