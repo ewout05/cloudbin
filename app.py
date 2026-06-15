@@ -1,41 +1,51 @@
 from re import template
 from flask import Flask, request, jsonify, abort, render_template, redirect
 import uuid
+from datetime import timedelta
 from google.cloud import storage
+import google.auth
+from google.auth.transport import requests as google_auth_requests
 
 app = Flask(__name__)
 
-# Tijdelijke opslag voor snippets
-data_storage = {}
+BUCKET_NAME = "haste_ewout05_com"
+# Content-type die we signen moet exact overeenkomen met wat de browser bij de
+# PUT meestuurt, anders weigert GCS de signed URL (SignatureDoesNotMatch).
+UPLOAD_CONTENT_TYPE = "text/plain; charset=utf-8"
+
 # Op Cloud Run gebruikt storage.Client() automatisch de credentials van de
 # gekoppelde service account (Application Default Credentials). Geen key-bestand nodig.
 client = storage.Client()
 
-# POST /create - Nieuwe snippet maken
-@app.route('/create', methods=['POST'])
-def create_snippet():
-    request_data = request.get_json()
-    if not request_data or 'content' not in request_data or not request_data['content'] or request_data['content'] == '':
-        return jsonify({'error': 'Content is required'}), 400
 
-    content = request_data['content']
-    language = detect_programming_language(content)
+def _generate_upload_url(snippet_id):
+    # v4 signed URL zodat de browser rechtstreeks naar GCS PUT't (buiten Cloud Run om).
+    # Tekenen gebeurt keyloos via de IAM Credentials API (signBlob) met de SA zelf.
+    credentials, _ = google.auth.default()
+    credentials.refresh(google_auth_requests.Request())
+
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=15),
+        method="PUT",
+        content_type=UPLOAD_CONTENT_TYPE,
+        service_account_email=credentials.service_account_email,
+        access_token=credentials.token,
+    )
+
+# POST /upload-url - Vraag een signed URL om rechtstreeks naar GCS te uploaden.
+# De client genereert geen inhoud hier; hij krijgt enkel een URL terug en PUT't
+# de bytes daarna zelf naar Google Cloud Storage (buiten Cloud Run om).
+@app.route('/upload-url', methods=['POST'])
+def create_upload_url():
     snippet_id = str(uuid.uuid4())[:8]  # Unieke ID van 8 karakters
-
-    # Opslag van de snippet
-    # data_storage[snippet_id] = content
-
-    # Opslag in Google Cloud Storage
-    bucket = client.get_bucket('haste_ewout05_com')
-    blob = bucket.blob(snippet_id)
-    blob.upload_from_string(content)
-    return jsonify({'id': snippet_id, "language": language, 'message': 'Snippet created successfully'}), 201
-
-
-
-def detect_programming_language(content):
-    result = "(auto)"
-    return result
+    upload_url = _generate_upload_url(snippet_id)
+    return jsonify({
+        'id': snippet_id,
+        'upload_url': upload_url,
+        'content_type': UPLOAD_CONTENT_TYPE,
+    }), 200
 
 # GET / - home page input
 @app.route('/', methods=['GET'])
@@ -48,8 +58,7 @@ def home():
 @app.route('/r/<snippet_id>', methods=['GET'])
 def get_snippet(snippet_id, language="(auto)"):
     # Ophalen van de snippet van Google Cloud Storage
-    bucket = client.get_bucket('haste_ewout05_com')  # Zorg ervoor dat je de juiste bucketnaam hebt
-    blob = bucket.blob(snippet_id)
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
     if snippet_id == "about":
         language = "md"
         with open('about.md', 'r') as file:
@@ -74,8 +83,7 @@ def get_snippet(snippet_id, language="(auto)"):
 @app.route('/raw/<snippet_id>', methods=['GET'])
 def get_raw_snippet(snippet_id, language=None):
     # Ophalen van de snippet van Google Cloud Storage
-    bucket = client.get_bucket('haste_ewout05_com')  # Zorg ervoor dat je de juiste bucketnaam hebt
-    blob = bucket.blob(snippet_id)
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
     if snippet_id == "about":
         language = "md"
         with open('about.md', 'r') as file:

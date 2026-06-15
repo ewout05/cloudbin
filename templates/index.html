@@ -207,28 +207,31 @@
         });
 
         // Acties voor de sneltoetsen
-        function saveAction() {
+        async function saveAction() {
             console.log('Opslaan actie');
-            // Voeg je opslaan logica toe hier
 
-            // neemt code en stuurt request naar /create en gaat naar /r/<id>
             const code = document.getElementById('code-area').value;
-            fetch('/create', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ content: code })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log(data);
-                window.location.href = `/r/${data.id}`;
-            })
-            .catch(error => {
-                console.error('Fout bij het opslaan:', error);
-            });
+            try {
+                // 1. Vraag een signed URL aan bij de server (zonder inhoud mee te sturen).
+                const res = await fetch('/upload-url', { method: 'POST' });
+                if (!res.ok) throw new Error('Kon geen upload-URL krijgen: ' + res.status);
+                const data = await res.json();
 
+                // 2. Upload de inhoud RECHTSTREEKS naar Google Cloud Storage.
+                //    De bytes gaan niet door Cloud Run heen -> enkel storage-kosten.
+                //    De Content-Type moet exact matchen met wat er gesigned is.
+                const put = await fetch(data.upload_url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': data.content_type },
+                    body: code
+                });
+                if (!put.ok) throw new Error('Upload naar storage mislukt: ' + put.status);
+
+                // 3. Toon de nieuwe paste.
+                window.location.href = `/r/${data.id}`;
+            } catch (error) {
+                console.error('Fout bij het opslaan:', error);
+            }
         }
 
         function newAction() {
