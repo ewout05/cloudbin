@@ -1,4 +1,3 @@
-from re import template
 from flask import Flask, request, jsonify, abort, render_template, redirect
 import uuid
 from datetime import timedelta
