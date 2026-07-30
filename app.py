@@ -12,6 +12,10 @@ BUCKET_NAME = "haste_ewout05_com"
 # otherwise GCS rejects the signed URL (SignatureDoesNotMatch).
 UPLOAD_CONTENT_TYPE = "text/plain; charset=utf-8"
 
+# Reject API uploads larger than this. Flask raises 413 before the view runs.
+MAX_PASTE_BYTES = 1024 * 1024  # 1 MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_PASTE_BYTES
+
 # On Cloud Run, storage.Client() automatically uses the credentials of the attached
 # service account (Application Default Credentials). No key file needed.
 client = storage.Client()
@@ -45,6 +49,18 @@ def create_upload_url():
         'upload_url': upload_url,
         'content_type': UPLOAD_CONTENT_TYPE,
     }), 200
+
+# POST /paste - Create a paste in a single call (server-side upload).
+@app.route('/paste', methods=['POST'])
+def create_paste():
+    snippet_id = str(uuid.uuid4())[:8]  # Unique 8-character ID
+    content = request.get_data(as_text=True)
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
+    try:
+        blob.upload_from_string(content, content_type=UPLOAD_CONTENT_TYPE)
+    except Exception:
+        return jsonify({'error': 'Failed to store paste'}), 502
+    return jsonify({'id': snippet_id}), 201
 
 # GET / - home page input
 @app.route('/', methods=['GET'])
@@ -95,8 +111,13 @@ def get_raw_snippet(snippet_id, language=None):
             # return jsonify({'error': f'Snippet not found: {str(e)}'}), 404
             return jsonify({'error': f'Snippet not found'}), 404
 
-    # Render the content in the template (or return raw text if you prefer)
-    return f"<pre>{content}</pre>"  # Or return raw text if you prefer: content
+    # Return the stored content verbatim as plain text (no HTML wrapper).
+    return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+# Return API errors as JSON instead of Flask's default HTML pages.
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify({'error': 'Payload too large', 'max_bytes': MAX_PASTE_BYTES}), 413
 
 # Run the app
 if __name__ == '__main__':
