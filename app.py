@@ -12,6 +12,10 @@ BUCKET_NAME = "haste_ewout05_com"
 # otherwise GCS rejects the signed URL (SignatureDoesNotMatch).
 UPLOAD_CONTENT_TYPE = "text/plain; charset=utf-8"
 
+# Reject API uploads larger than this. Flask raises 413 before the view runs.
+MAX_PASTE_BYTES = 1024 * 1024  # 1 MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_PASTE_BYTES
+
 # On Cloud Run, storage.Client() automatically uses the credentials of the attached
 # service account (Application Default Credentials). No key file needed.
 client = storage.Client()
@@ -52,7 +56,10 @@ def create_paste():
     snippet_id = str(uuid.uuid4())[:8]  # Unique 8-character ID
     content = request.get_data(as_text=True)
     blob = client.bucket(BUCKET_NAME).blob(snippet_id)
-    blob.upload_from_string(content, content_type=UPLOAD_CONTENT_TYPE)
+    try:
+        blob.upload_from_string(content, content_type=UPLOAD_CONTENT_TYPE)
+    except Exception:
+        return jsonify({'error': 'Failed to store paste'}), 502
     return jsonify({'id': snippet_id}), 201
 
 # GET / - home page input
@@ -106,6 +113,11 @@ def get_raw_snippet(snippet_id, language=None):
 
     # Return the stored content verbatim as plain text (no HTML wrapper).
     return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+# Return API errors as JSON instead of Flask's default HTML pages.
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify({'error': 'Payload too large', 'max_bytes': MAX_PASTE_BYTES}), 413
 
 # Run the app
 if __name__ == '__main__':
