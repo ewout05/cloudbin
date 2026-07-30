@@ -114,6 +114,18 @@ def get_raw_snippet(snippet_id, language=None):
     # Return the stored content verbatim as plain text (no HTML wrapper).
     return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
+# GET /data/<snippet_id> - Retrieve a stored paste as JSON (for API clients).
+# Same bytes as /raw, but served with an application/json content-type so callers
+# auto-parse it as an object instead of getting a plain string.
+@app.route('/data/<snippet_id>', methods=['GET'])
+def get_data(snippet_id):
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
+    try:
+        content = blob.download_as_text()
+    except Exception:
+        return jsonify({'error': 'Snippet not found'}), 404
+    return content, 200, {'Content-Type': 'application/json; charset=utf-8'}
+
 # Return API errors as JSON instead of Flask's default HTML pages.
 @app.errorhandler(413)
 def too_large(_):
