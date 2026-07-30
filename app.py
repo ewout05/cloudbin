@@ -46,6 +46,15 @@ def create_upload_url():
         'content_type': UPLOAD_CONTENT_TYPE,
     }), 200
 
+# POST /paste - Create a paste in a single call (server-side upload).
+@app.route('/paste', methods=['POST'])
+def create_paste():
+    snippet_id = str(uuid.uuid4())[:8]  # Unique 8-character ID
+    content = request.get_data(as_text=True)
+    blob = client.bucket(BUCKET_NAME).blob(snippet_id)
+    blob.upload_from_string(content, content_type=UPLOAD_CONTENT_TYPE)
+    return jsonify({'id': snippet_id}), 201
+
 # GET / - home page input
 @app.route('/', methods=['GET'])
 def home():
@@ -95,8 +104,8 @@ def get_raw_snippet(snippet_id, language=None):
             # return jsonify({'error': f'Snippet not found: {str(e)}'}), 404
             return jsonify({'error': f'Snippet not found'}), 404
 
-    # Render the content in the template (or return raw text if you prefer)
-    return f"<pre>{content}</pre>"  # Or return raw text if you prefer: content
+    # Return the stored content verbatim as plain text (no HTML wrapper).
+    return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 # Run the app
 if __name__ == '__main__':
